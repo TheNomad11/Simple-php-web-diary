@@ -1,33 +1,7 @@
-.entry-meta {
-        flex-direction: column;
-        gap: 5px;
-    }
-
-    .memory-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .pagination {
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .image-grid,
-    .image-preview,
-    .entry-images,
-    .memory-images {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    }
-
-    .image-grid,
-    .image-preview,
-    .entry-images,
-    .memory-images {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    }/**
+/**
  * Diary Web App Styles
  * Clean, modern design with good readability
+ * Enhanced with writing prompts and quick tags
  */
 
 /* Reset and Base Styles */
@@ -61,7 +35,17 @@ header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 40px 30px;
-    text-align: center;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.header-title {
+    flex: 1;
 }
 
 header h1 {
@@ -73,6 +57,25 @@ header h1 {
 .subtitle {
     font-size: 1.1em;
     opacity: 0.95;
+}
+
+.btn-logout {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95em;
+    transition: all 0.3s;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    white-space: nowrap;
+}
+
+.btn-logout:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
 }
 
 /* Messages */
@@ -112,6 +115,173 @@ section h2 {
     font-weight: 600;
 }
 
+/* Writing Prompts Section */
+.writing-prompts {
+    background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+    border-radius: 8px;
+    margin-bottom: 25px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(253, 203, 110, 0.3);
+}
+
+.prompts-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #333;
+    transition: background 0.3s;
+}
+
+.prompts-toggle:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.toggle-icon {
+    font-size: 1.3em;
+}
+
+.toggle-text {
+    flex: 1;
+    text-align: left;
+}
+
+.toggle-arrow {
+    font-size: 0.9em;
+    transition: transform 0.3s;
+}
+
+.prompts-content {
+    padding: 0 20px 20px 20px;
+    display: none;
+}
+
+.daily-prompt {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    border-left: 4px solid #d63031;
+}
+
+.prompt-label {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #d63031;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.prompt-text {
+    font-size: 1.15em;
+    color: #333;
+    font-style: italic;
+    line-height: 1.6;
+}
+
+/* Quick Tags Section */
+.quick-tags-section {
+    background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 2px solid #4dd0e1;
+}
+
+.quick-tags-header {
+    font-size: 1.05em;
+    font-weight: 600;
+    color: #00838f;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quick-tags-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.quick-tag-input {
+    margin-bottom: 0 !important;
+}
+
+.quick-tag-input label {
+    color: #00838f;
+    font-size: 0.9em;
+    margin-bottom: 6px;
+}
+
+.quick-tag-input input,
+.quick-tag-input textarea,
+.energy-select {
+    background: white;
+    border: 2px solid #4dd0e1;
+    padding: 10px 12px;
+    font-size: 0.95em;
+}
+
+.quick-tag-input textarea {
+    resize: vertical;
+    min-height: 50px;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+.quick-tag-input input:focus,
+.quick-tag-input textarea:focus,
+.energy-select:focus {
+    border-color: #00acc1;
+    box-shadow: 0 0 0 3px rgba(77, 208, 225, 0.2);
+}
+
+/* Quick Tags Display (in entries and view) */
+.view-quick-tags,
+.entry-quick-tags {
+    margin: 15px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+
+.quick-tag,
+.quick-tag-mini {
+    display: block;
+    padding: 5px 0;
+    font-size: 0.95em;
+    color: #495057;
+    line-height: 1.6;
+}
+
+.quick-tag-mini {
+    font-size: 0.9em;
+}
+
+.location-tag {
+    color: #0d47a1;
+}
+
+.weather-tag {
+    color: #856404;
+}
+
+.mood-tag {
+    color: #155724;
+}
+
+.plans-tag {
+    color: #6c757d;
+}
+
 /* Entry Form */
 .entry-form {
     background: #f8f9fa;
@@ -141,7 +311,8 @@ section h2 {
 .form-group input[type="date"],
 .form-group input[type="time"],
 .form-group input[type="text"],
-.form-group textarea {
+.form-group textarea,
+.form-group select {
     width: 100%;
     padding: 12px 15px;
     border: 2px solid #dee2e6;
@@ -154,7 +325,8 @@ section h2 {
 .form-group input[type="date"]:focus,
 .form-group input[type="time"]:focus,
 .form-group input[type="text"]:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -258,6 +430,12 @@ section h2 {
     margin: 15px 0;
 }
 
+/* Single image - full width, natural aspect ratio */
+.entry-images:has(img:only-child),
+.memory-images:has(img:only-child) {
+    grid-template-columns: 1fr;
+}
+
 .entry-image,
 .memory-image {
     width: 100%;
@@ -267,6 +445,14 @@ section h2 {
     border: 2px solid #dee2e6;
     transition: transform 0.3s;
     cursor: pointer;
+}
+
+/* Single image - natural aspect ratio */
+.entry-images:has(img:only-child) .entry-image,
+.memory-images:has(img:only-child) .memory-image {
+    height: auto;
+    max-height: 500px;
+    object-fit: contain;
 }
 
 .entry-image:hover,
@@ -388,6 +574,11 @@ section h2 {
     margin: 25px 0;
 }
 
+/* Single image in view - full width */
+.view-images:has(img:only-child) {
+    grid-template-columns: 1fr;
+}
+
 .view-image {
     width: 100%;
     height: 300px;
@@ -396,6 +587,13 @@ section h2 {
     border: 2px solid #dee2e6;
     cursor: zoom-in;
     transition: all 0.3s;
+}
+
+/* Single image in view - natural aspect ratio */
+.view-images:has(img:only-child) .view-image {
+    height: auto;
+    max-height: 600px;
+    object-fit: contain;
 }
 
 .view-image:hover {
@@ -705,10 +903,46 @@ footer {
     font-size: 0.95em;
 }
 
+/* Login Styles */
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.login-box {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    padding: 40px;
+    max-width: 400px;
+    width: 100%;
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.login-header h1 {
+    font-size: 2em;
+    color: #667eea;
+    margin-bottom: 10px;
+}
+
+.login-header p {
+    color: #6c757d;
+}
+
+.login-form .form-group {
+    margin-bottom: 20px;
+}
 
 .login-form input[type="text"],
 .login-form input[type="password"] {
-    width: 20em !important;
+    width: 100%;
     padding: 12px 15px;
     border: 2px solid #dee2e6;
     border-radius: 6px;
@@ -716,7 +950,16 @@ footer {
     box-sizing: border-box;
 }
 
+.btn-block {
+    width: 100%;
+    display: block;
+}
 
+.login-footer {
+    text-align: center;
+    margin-top: 20px;
+    color: #6c757d;
+}
 
 /* Responsive Design */
 @media (max-width: 768px) {
@@ -729,11 +972,30 @@ footer {
     }
 
     header {
-        padding: 30px 20px;
+        padding: 25px 20px;
+    }
+
+    .header-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .header-title {
+        text-align: left;
     }
 
     header h1 {
-        font-size: 2em;
+        font-size: 1.8em;
+    }
+
+    .subtitle {
+        font-size: 1em;
+    }
+
+    .btn-logout {
+        align-self: stretch;
+        text-align: center;
     }
 
     section {
@@ -741,25 +1003,60 @@ footer {
     }
 
     section h2 {
-        font-size: 1.5em;
+        font-size: 1.4em;
+        margin-bottom: 20px;
     }
 
+    /* Search form fixes */
     .section-header {
         flex-direction: column;
         align-items: stretch;
+        gap: 15px;
+    }
+
+    .section-header h2 {
+        margin-bottom: 0;
     }
 
     .search-form {
         max-width: 100%;
+        flex-wrap: wrap;
     }
 
+    .search-input {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .btn-search {
+        padding: 10px 15px;
+        font-size: 0.9em;
+    }
+
+    /* Form improvements */
     .form-row {
         grid-template-columns: 1fr;
         gap: 0;
     }
 
+    .quick-tags-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .quick-tags-section {
+        padding: 15px;
+    }
+
     .entry-form {
-        padding: 20px;
+        padding: 15px;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        font-size: 0.9em;
     }
 
     .form-actions {
@@ -770,6 +1067,25 @@ footer {
         width: 100%;
     }
 
+    /* Writing prompts mobile */
+    .prompts-toggle {
+        padding: 12px 15px;
+        font-size: 1em;
+    }
+
+    .prompts-content {
+        padding: 0 15px 15px 15px;
+    }
+
+    .daily-prompt {
+        padding: 15px;
+    }
+
+    .prompt-text {
+        font-size: 1em;
+    }
+
+    /* Entry cards */
     .entry-header {
         flex-direction: column;
         align-items: flex-start;
@@ -779,30 +1095,151 @@ footer {
     .entry-meta {
         flex-direction: column;
         gap: 5px;
-    }
-
-    .memory-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .pagination {
-        flex-direction: column;
-        gap: 10px;
-    }
-}
-
-@media (max-width: 480px) {
-    header h1 {
-        font-size: 1.6em;
-    }
-
-    .subtitle {
-        font-size: 1em;
+        font-size: 0.85em;
     }
 
     .entry-title {
         font-size: 1.2em;
     }
+
+    .entry-actions {
+        align-self: flex-end;
+    }
+
+    /* View entry mobile */
+    .view-entry-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .view-actions {
+        flex-direction: row;
+        width: 100%;
+    }
+
+    .view-actions .btn {
+        flex: 1;
+    }
+
+    .view-title {
+        font-size: 1.5em;
+    }
+
+    .view-meta {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .view-quick-tags,
+    .entry-quick-tags {
+        padding: 12px;
+    }
+
+    .quick-tag,
+    .quick-tag-mini {
+        font-size: 0.85em;
+    }
+
+    /* Memory cards */
+    .memory-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .memory-title {
+        font-size: 1.2em;
+    }
+
+    /* Pagination */
+    .pagination {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .pagination .btn {
+        width: 100%;
+    }
+
+    /* Images */
+    .image-grid,
+    .image-preview,
+    .entry-images,
+    .memory-images {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+
+    .view-images {
+        grid-template-columns: 1fr;
+    }
+
+    .view-image {
+        height: 250px;
+    }
+
+    /* Lightbox mobile */
+    .lightbox-close {
+        top: 15px;
+        right: 15px;
+        font-size: 40px;
+    }
+
+    /* Messages */
+    .message {
+        margin: 15px 20px;
+        padding: 12px 15px;
+        font-size: 0.9em;
+    }
 }
 
+@media (max-width: 480px) {
+    body {
+        padding: 5px;
+    }
+
+    header {
+        padding: 20px 15px;
+    }
+
+    .header-content {
+        gap: 12px;
+    }
+
+    header h1 {
+        font-size: 1.5em;
+    }
+
+    .btn-logout {
+        font-size: 0.9em;
+        padding: 8px 16px;
+    }
+
+    section {
+        padding: 15px;
+    }
+
+    section h2 {
+        font-size: 1.3em;
+    }
+
+    .entry-title {
+        font-size: 1.1em;
+    }
+
+    .view-title {
+        font-size: 1.3em;
+    }
+
+    .quick-tag,
+    .quick-tag-mini {
+        font-size: 0.8em;
+    }
+
+    .btn {
+        padding: 10px 16px;
+        font-size: 0.95em;
+    }
+
+    .btn-icon {
+        font-size: 1.2em;
+    }
+}
