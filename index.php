@@ -3,6 +3,7 @@
  * Simple Diary Web Application
  * Main file: index.php
  * Handles all CRUD operations for diary entries with image support
+ * Enhanced with writing prompts and quick tags
  */
 
 // Start session and require authentication
@@ -21,6 +22,34 @@ define('IMAGES_DIR', __DIR__ . '/diary_images');
 define('ENTRIES_PER_PAGE', 5);
 define('MAX_IMAGE_SIZE', 5 * 1024 * 1024); // 5MB
 define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+// Writing prompts that rotate daily - practical and easy to answer
+$writingPrompts = [
+    "Where are you right now?",
+    "What do you see around you?",
+    "What did you do today?",
+    "What sounds do you hear at this moment?",
+    "What's the weather like today?",
+    "What did you eat today that you enjoyed?",
+    "Who did you talk to today?",
+    "Describe one object near you in detail.",
+    "What time did you wake up today?",
+    "How are you feeling right now?",
+    "What are you wearing right now?",
+    "What's one thing you noticed today?",
+    "What's on your to-do list?",
+    "What did you accomplish today?",
+    "What are you thinking about?",
+    "What's different about today?",
+    "What made today memorable?",
+    "What are you looking forward to?",
+    "What did you learn or discover today?",
+    "What's the first thing you remember from today?"
+];
+
+// Get daily prompt (same prompt for the whole day)
+$promptIndex = date('z') % count($writingPrompts);
+$todayPrompt = $writingPrompts[$promptIndex];
 
 // Create directories if they don't exist
 if (!is_dir(ENTRIES_DIR)) {
@@ -125,6 +154,61 @@ function deleteImage($filename) {
 }
 
 /**
+ * Format quick tags for storage
+ */
+function formatQuickTags($location, $weather, $mood, $plans) {
+    $tags = [];
+    if (!empty($location)) $tags[] = "Location: " . $location;
+    if (!empty($weather)) $tags[] = "Weather: " . $weather;
+    if (!empty($mood)) $tags[] = "Mood: " . $mood;
+    if (!empty($plans)) $tags[] = "Plans: " . $plans;
+    
+    return !empty($tags) ? implode("\n", $tags) . "\n\n" : "";
+}
+
+/**
+ * Parse quick tags from content
+ */
+function parseQuickTags($content) {
+    $tags = ['location' => '', 'weather' => '', 'mood' => '', 'plans' => ''];
+    
+    // Check if content starts with tags (format: Location: X\nWeather: Y\nMood: Z\nPlans: W)
+    $lines = explode("\n", $content);
+    $tagCount = 0;
+    
+    foreach ($lines as $line) {
+        if (preg_match('/^Location:\s*(.+)$/', $line, $match)) {
+            $tags['location'] = trim($match[1]);
+            $tagCount++;
+        } elseif (preg_match('/^Weather:\s*(.+)$/', $line, $match)) {
+            $tags['weather'] = trim($match[1]);
+            $tagCount++;
+        } elseif (preg_match('/^Mood:\s*(.+)$/', $line, $match)) {
+            $tags['mood'] = trim($match[1]);
+            $tagCount++;
+        } elseif (preg_match('/^Plans:\s*(.+)$/', $line, $match)) {
+            $tags['plans'] = trim($match[1]);
+            $tagCount++;
+        } elseif (!empty(trim($line))) {
+            // Hit non-tag content, stop
+            break;
+        }
+    }
+    
+    // Remove tag lines from content
+    if ($tagCount > 0) {
+        $contentLines = array_slice($lines, $tagCount);
+        // Remove empty lines at the start
+        while (!empty($contentLines) && empty(trim($contentLines[0]))) {
+            array_shift($contentLines);
+        }
+        $content = implode("\n", $contentLines);
+    }
+    
+    return ['tags' => $tags, 'content' => $content];
+}
+
+/**
  * Save diary entry to file
  */
 function saveEntry($filename, $title, $content, $images = []) {
@@ -169,13 +253,21 @@ function readEntry($filename) {
         }
     }
     
+    $entryContent = $lines[2] ?? '';
+    $parsed = parseQuickTags($entryContent);
+    
     return [
         'filename' => $filename,
         'date' => $dateTime['date'],
         'time' => $dateTime['time'],
         'title' => $lines[0] ?? '',
         'images' => $images,
-        'content' => $lines[2] ?? ''
+        'content' => $entryContent,
+        'content_without_tags' => $parsed['content'],
+        'location' => $parsed['tags']['location'],
+        'weather' => $parsed['tags']['weather'],
+        'mood' => $parsed['tags']['mood'],
+        'plans' => $parsed['tags']['plans']
     ];
 }
 
@@ -204,6 +296,10 @@ function deleteEntry($filename) {
 function getAllEntries() {
     $entries = [];
     $files = glob(ENTRIES_DIR . '/*.txt');
+    
+    if ($files === false) {
+        return [];
+    }
     
     foreach ($files as $filepath) {
         $filename = basename($filepath);
@@ -255,6 +351,10 @@ function getMemories() {
         
         $files = glob(ENTRIES_DIR . '/' . $datePrefix . '_*.txt');
         
+        if ($files === false) {
+            continue;
+        }
+        
         foreach ($files as $filepath) {
             $filename = basename($filepath);
             $entry = readEntry($filename);
@@ -288,6 +388,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $time = $_POST['time'] ?? '';
         $title = $_POST['title'] ?? '';
         $content = $_POST['content'] ?? '';
+        $location = $_POST['location'] ?? '';
+        $weather = $_POST['weather'] ?? '';
+        $mood = $_POST['mood'] ?? '';
+        $plans = $_POST['plans'] ?? '';
         $originalFilename = $_POST['original_filename'] ?? '';
         $existingImages = isset($_POST['existing_images']) ? json_decode($_POST['existing_images'], true) : [];
         $deletedImages = isset($_POST['deleted_images']) ? json_decode($_POST['deleted_images'], true) : [];
@@ -304,10 +408,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (empty($title)) {
             $errors[] = 'Title is required.';
-        }
-        
-        if (empty($content)) {
-            $errors[] = 'Content is required.';
         }
         
         $uploadedImages = [];
@@ -346,6 +446,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $allImages = array_merge($existingImages, $uploadedImages);
             
+            // Add quick tags to content
+            $tagsText = formatQuickTags($location, $weather, $mood, $plans);
+            $fullContent = $tagsText . $content;
+            
             if ($originalFilename && $originalFilename !== $filename) {
                 $filepath = ENTRIES_DIR . '/' . $originalFilename;
                 if (file_exists($filepath)) {
@@ -353,7 +457,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
-            if (saveEntry($filename, $title, $content, $allImages)) {
+            if (saveEntry($filename, $title, $fullContent, $allImages)) {
                 $message = 'Diary entry saved successfully!';
                 $messageType = 'success';
             } else {
@@ -377,7 +481,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     if (!empty($message)) {
-        session_start();
         $_SESSION['message'] = $message;
         $_SESSION['messageType'] = $messageType;
         header('Location: ' . $_SERVER['PHP_SELF']);
@@ -387,7 +490,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Handle view action
 if (isset($_GET['view'])) {
-    $filename = $_GET['view'];
+    $filename = basename($_GET['view']); // Security: prevent directory traversal
     $viewEntry = readEntry($filename);
     
     if (!$viewEntry) {
@@ -398,7 +501,7 @@ if (isset($_GET['view'])) {
 
 // Handle edit action
 if (isset($_GET['edit'])) {
-    $filename = $_GET['edit'];
+    $filename = basename($_GET['edit']); // Security: prevent directory traversal
     $editEntry = readEntry($filename);
     
     if (!$editEntry) {
@@ -408,7 +511,6 @@ if (isset($_GET['edit'])) {
 }
 
 // Retrieve session messages
-session_start();
 if (isset($_SESSION['message'])) {
     $message = $_SESSION['message'];
     $messageType = $_SESSION['messageType'];
@@ -439,7 +541,11 @@ $recentEntries = array_slice($allEntries, $offset, ENTRIES_PER_PAGE);
 $formDate = $editEntry['date'] ?? date('Y-m-d');
 $formTime = $editEntry['time'] ?? date('H:i');
 $formTitle = $editEntry['title'] ?? '';
-$formContent = $editEntry['content'] ?? '';
+$formContent = $editEntry['content_without_tags'] ?? '';
+$formLocation = $editEntry['location'] ?? '';
+$formWeather = $editEntry['weather'] ?? '';
+$formMood = $editEntry['mood'] ?? '';
+$formPlans = $editEntry['plans'] ?? '';
 $formImages = $editEntry['images'] ?? [];
 $originalFilename = $editEntry['filename'] ?? '';
 ?>
@@ -454,8 +560,13 @@ $originalFilename = $editEntry['filename'] ?? '';
 <body>
     <div class="container">
         <header>
-            <h1>📔 My Personal Diary</h1>
-            <p class="subtitle">Capture your thoughts and memories</p>
+            <div class="header-content">
+                <div class="header-title">
+                    <h1>📔 My Personal Diary</h1>
+                    <p class="subtitle">Capture your thoughts and memories</p>
+                </div>
+                <a href="logout.php" class="btn-logout" title="Logout">🚪 Logout</a>
+            </div>
         </header>
 
         <?php if ($message): ?>
@@ -483,6 +594,23 @@ $originalFilename = $editEntry['filename'] ?? '';
                     
                     <h3 class="view-title"><?php echo sanitizeInput($viewEntry['title']); ?></h3>
                     
+                    <?php if (!empty($viewEntry['location']) || !empty($viewEntry['weather']) || !empty($viewEntry['mood']) || !empty($viewEntry['plans'])): ?>
+                        <div class="view-quick-tags">
+                            <?php if (!empty($viewEntry['location'])): ?>
+                                <span class="quick-tag location-tag">📍 <?php echo sanitizeInput($viewEntry['location']); ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($viewEntry['weather'])): ?>
+                                <span class="quick-tag weather-tag">🌤️ <?php echo sanitizeInput($viewEntry['weather']); ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($viewEntry['mood'])): ?>
+                                <span class="quick-tag mood-tag">😊 <?php echo sanitizeInput($viewEntry['mood']); ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($viewEntry['plans'])): ?>
+                                <span class="quick-tag plans-tag">📅 <?php echo sanitizeInput($viewEntry['plans']); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                    
                     <?php if (!empty($viewEntry['images'])): ?>
                         <div class="view-images">
                             <?php foreach ($viewEntry['images'] as $image): ?>
@@ -495,7 +623,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                     <?php endif; ?>
                     
                     <div class="view-text">
-                        <?php echo nl2br(sanitizeInput($viewEntry['content'])); ?>
+                        <?php echo nl2br(sanitizeInput($viewEntry['content_without_tags'])); ?>
                     </div>
                     
                     <div class="view-footer">
@@ -545,7 +673,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <?php endif; ?>
                             
                             <div class="memory-preview">
-                                <?php echo nl2br(sanitizeInput(getPreview($memory['content'], 200))); ?>
+                                <?php echo nl2br(sanitizeInput(getPreview($memory['content_without_tags'], 200))); ?>
                             </div>
                             <a href="?view=<?php echo urlencode($memory['filename']); ?>" class="memory-link">
                                 Read full entry →
@@ -559,6 +687,21 @@ $originalFilename = $editEntry['filename'] ?? '';
         <?php if (!$viewEntry): ?>
         <section class="entry-form-section">
             <h2><?php echo $editEntry ? 'Edit Entry' : 'New Entry'; ?></h2>
+            
+            <!-- Writing Prompts Section -->
+            <div class="writing-prompts">
+                <button type="button" class="prompts-toggle" onclick="togglePrompts()">
+                    <span class="toggle-icon">💡</span>
+                    <span class="toggle-text">Writing Prompts</span>
+                    <span class="toggle-arrow">▼</span>
+                </button>
+                <div class="prompts-content" id="promptsContent">
+                    <div class="daily-prompt">
+                        <div class="prompt-label">Today's Prompt:</div>
+                        <div class="prompt-text"><?php echo sanitizeInput($todayPrompt); ?></div>
+                    </div>
+                </div>
+            </div>
             
             <form method="POST" action="" class="entry-form" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="save">
@@ -587,6 +730,38 @@ $originalFilename = $editEntry['filename'] ?? '';
                            placeholder="Enter a title for your entry" required maxlength="200">
                 </div>
                 
+                <!-- Quick Tags Section -->
+                <div class="quick-tags-section">
+                    <div class="quick-tags-header">
+                        <span>✨ Quick Context (optional)</span>
+                    </div>
+                    <div class="quick-tags-grid">
+                        <div class="form-group quick-tag-input">
+                            <label for="location">📍 Location</label>
+                            <textarea id="location" name="location" rows="2" 
+                                   placeholder="Where are you? What does it look like?"><?php echo sanitizeInput($formLocation); ?></textarea>
+                        </div>
+                        
+                        <div class="form-group quick-tag-input">
+                            <label for="weather">🌤️ Weather</label>
+                            <textarea id="weather" name="weather" rows="2" 
+                                   placeholder="How's the weather? Temperature?"><?php echo sanitizeInput($formWeather); ?></textarea>
+                        </div>
+                        
+                        <div class="form-group quick-tag-input">
+                            <label for="mood">😊 Mood</label>
+                            <textarea id="mood" name="mood" rows="2" 
+                                   placeholder="How are you feeling?"><?php echo sanitizeInput($formMood); ?></textarea>
+                        </div>
+                        
+                        <div class="form-group quick-tag-input">
+                            <label for="plans">📅 Plans today</label>
+                            <textarea id="plans" name="plans" rows="2" 
+                                   placeholder="What are you doing or planning today?"><?php echo sanitizeInput($formPlans); ?></textarea>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="form-group">
                     <label for="images">Images (Max 5MB each, JPEG/PNG/GIF/WebP)</label>
                     <input type="file" id="images" name="images[]" accept="image/*" multiple class="file-input">
@@ -608,9 +783,9 @@ $originalFilename = $editEntry['filename'] ?? '';
                 </div>
                 
                 <div class="form-group">
-                    <label for="content">Content *</label>
-                    <textarea id="content" name="content" rows="8" 
-                              placeholder="Write your diary entry here..." required><?php echo sanitizeInput($formContent); ?></textarea>
+                    <label for="content">Anything else?</label>
+                    <textarea id="content" name="content" rows="6" 
+                              placeholder="Any other thoughts, questions, or details..."><?php echo sanitizeInput($formContent); ?></textarea>
                 </div>
                 
                 <div class="form-actions">
@@ -685,6 +860,23 @@ $originalFilename = $editEntry['filename'] ?? '';
                             
                             <h3 class="entry-title"><?php echo sanitizeInput($entry['title']); ?></h3>
                             
+                            <?php if (!empty($entry['location']) || !empty($entry['weather']) || !empty($entry['mood']) || !empty($entry['plans'])): ?>
+                                <div class="entry-quick-tags">
+                                    <?php if (!empty($entry['location'])): ?>
+                                        <span class="quick-tag-mini location-tag">📍 <?php echo sanitizeInput($entry['location']); ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($entry['weather'])): ?>
+                                        <span class="quick-tag-mini weather-tag">🌤️ <?php echo sanitizeInput($entry['weather']); ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($entry['mood'])): ?>
+                                        <span class="quick-tag-mini mood-tag">😊 <?php echo sanitizeInput($entry['mood']); ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($entry['plans'])): ?>
+                                        <span class="quick-tag-mini plans-tag">📅 <?php echo sanitizeInput($entry['plans']); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            
                             <?php if (!empty($entry['images'])): ?>
                                 <div class="entry-images">
                                     <?php foreach ($entry['images'] as $image): ?>
@@ -697,7 +889,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <?php endif; ?>
                             
                             <div class="entry-preview">
-                                <?php echo nl2br(sanitizeInput(getPreview($entry['content']))); ?>
+                                <?php echo nl2br(sanitizeInput(getPreview($entry['content_without_tags']))); ?>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -733,6 +925,27 @@ $originalFilename = $editEntry['filename'] ?? '';
     </div>
 
     <script>
+    // Toggle prompts section
+    function togglePrompts() {
+        const content = document.getElementById('promptsContent');
+        const arrow = document.querySelector('.toggle-arrow');
+        
+        if (content.style.display === 'none' || content.style.display === '') {
+            content.style.display = 'block';
+            arrow.textContent = '▲';
+        } else {
+            content.style.display = 'none';
+            arrow.textContent = '▼';
+        }
+    }
+    
+    // Show prompts by default on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const content = document.getElementById('promptsContent');
+        content.style.display = 'block';
+        document.querySelector('.toggle-arrow').textContent = '▲';
+    });
+    
     document.getElementById('images')?.addEventListener('change', function(e) {
         const preview = document.getElementById('image-preview');
         preview.innerHTML = '';
