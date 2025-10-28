@@ -14,6 +14,7 @@ A simple personal diary web application built with PHP and vanilla JavaScript.
 - **Responsive design**: Works well on desktop and mobile devices
 - **Pagination**: Manage large numbers of entries easily
 - **Simple file storage**: Entries saved as text files in a dedicated folder
+- **Writing prompts and quick tags**: Get started writing easily
 
 ## 🛠️ Requirements
 
