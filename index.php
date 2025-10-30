@@ -20,7 +20,7 @@ date_default_timezone_set('Europe/Berlin');
 define('ENTRIES_DIR', __DIR__ . '/diary_entries');
 define('IMAGES_DIR', __DIR__ . '/diary_images');
 define('ENTRIES_PER_PAGE', 5);
-define('MAX_IMAGE_SIZE', 5 * 1024 * 1024); // 5MB
+define('MAX_IMAGE_SIZE', 12 * 1024 * 1024); // 12MB
 define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 // Writing prompts that rotate daily - practical and easy to answer
@@ -108,7 +108,7 @@ function parseFilename($filename) {
 }
 
 /**
- * Handle image upload
+ * Handle image upload with automatic resizing
  */
 function uploadImage($file) {
     if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
@@ -116,7 +116,7 @@ function uploadImage($file) {
     }
     
     if ($file['size'] > MAX_IMAGE_SIZE) {
-        return ['success' => false, 'error' => 'Image size must be less than 5MB'];
+        return ['success' => false, 'error' => 'Image size must be less than 12MB'];
     }
     
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
@@ -127,11 +127,75 @@ function uploadImage($file) {
         return ['success' => false, 'error' => 'Invalid image type'];
     }
     
-    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+    // Load image based on type
+    switch ($mimeType) {
+        case 'image/jpeg':
+            $source = imagecreatefromjpeg($file['tmp_name']);
+            break;
+        case 'image/png':
+            $source = imagecreatefrompng($file['tmp_name']);
+            break;
+        case 'image/gif':
+            $source = imagecreatefromgif($file['tmp_name']);
+            break;
+        case 'image/webp':
+            $source = imagecreatefromwebp($file['tmp_name']);
+            break;
+        default:
+            return ['success' => false, 'error' => 'Unsupported image type'];
+    }
+    
+    if (!$source) {
+        return ['success' => false, 'error' => 'Failed to process image'];
+    }
+    
+    // Get original dimensions
+    $origWidth = imagesx($source);
+    $origHeight = imagesy($source);
+    
+    // Calculate new dimensions (max 800x800, maintain aspect ratio)
+    $maxDimension = 800;
+    if ($origWidth > $maxDimension || $origHeight > $maxDimension) {
+        if ($origWidth > $origHeight) {
+            $newWidth = $maxDimension;
+            $newHeight = intval($origHeight * ($maxDimension / $origWidth));
+        } else {
+            $newHeight = $maxDimension;
+            $newWidth = intval($origWidth * ($maxDimension / $origHeight));
+        }
+    } else {
+        // Image is smaller than max, keep original size
+        $newWidth = $origWidth;
+        $newHeight = $origHeight;
+    }
+    
+    // Create resized image
+    $resized = imagecreatetruecolor($newWidth, $newHeight);
+    
+    // Preserve transparency for PNG and GIF
+    if ($mimeType === 'image/png' || $mimeType === 'image/gif') {
+        imagealphablending($resized, false);
+        imagesavealpha($resized, true);
+        $transparent = imagecolorallocatealpha($resized, 255, 255, 255, 127);
+        imagefilledrectangle($resized, 0, 0, $newWidth, $newHeight, $transparent);
+    }
+    
+    // Resize
+    imagecopyresampled($resized, $source, 0, 0, 0, 0, $newWidth, $newHeight, $origWidth, $origHeight);
+    
+    // Generate filename
+    $extension = 'jpg'; // Convert all to JPEG for consistency and smaller size
     $filename = uniqid() . '_' . time() . '.' . $extension;
     $filepath = IMAGES_DIR . '/' . $filename;
     
-    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+    // Save as JPEG with 70% quality
+    $saved = imagejpeg($resized, $filepath, 70);
+    
+    // Clean up
+    imagedestroy($source);
+    imagedestroy($resized);
+    
+    if ($saved) {
         return ['success' => true, 'filename' => $filename];
     }
     
@@ -291,6 +355,41 @@ function deleteEntry($filename) {
 }
 
 /**
+ * Get all entries for a specific month/year
+ */
+function getEntriesForMonth($year, $month) {
+    $allEntries = getAllEntries();
+    $monthEntries = [];
+    
+    $targetMonth = sprintf('%04d-%02d', $year, $month);
+    
+    foreach ($allEntries as $entry) {
+        if (strpos($entry['date'], $targetMonth) === 0) {
+            $monthEntries[] = $entry;
+        }
+    }
+    
+    return $monthEntries;
+}
+
+/**
+ * Get days that have entries for a specific month
+ */
+function getDaysWithEntries($year, $month) {
+    $entries = getEntriesForMonth($year, $month);
+    $days = [];
+    
+    foreach ($entries as $entry) {
+        $day = (int)date('j', strtotime($entry['date']));
+        if (!in_array($day, $days)) {
+            $days[] = $day;
+        }
+    }
+    
+    return $days;
+}
+
+/**
  * Get all diary entries sorted by date/time descending
  */
 function getAllEntries() {
@@ -377,6 +476,24 @@ function getPreview($content, $length = 150) {
         return substr($content, 0, $length) . '...';
     }
     return $content;
+}
+
+/**
+ * Convert URLs in text to clickable links
+ */
+function linkifyText($text) {
+    // Pattern to match URLs
+    $pattern = '/\b(https?:\/\/[^\s<]+)/i';
+    
+    // Replace URLs with clickable links
+    $text = preg_replace_callback($pattern, function($matches) {
+        $url = $matches[1];
+        // Remove trailing punctuation that's probably not part of the URL
+        $url = rtrim($url, '.,;:!?)');
+        return '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener noreferrer" class="auto-link">' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '</a>';
+    }, $text);
+    
+    return $text;
 }
 
 // Handle form submissions
@@ -522,13 +639,30 @@ if (isset($_SESSION['message'])) {
 $searchQuery = isset($_GET['search']) ? trim($_GET['search']) : '';
 $isSearching = !empty($searchQuery);
 
+// Handle date filtering
+$filterYear = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
+$filterMonth = isset($_GET['month']) ? intval($_GET['month']) : date('n');
+$filterDate = isset($_GET['date']) ? $_GET['date'] : '';
+
 if ($isSearching) {
     $allEntries = searchEntries($searchQuery);
+} elseif (!empty($filterDate) && isValidDate($filterDate)) {
+    // Filter by specific date
+    $allEntries = getAllEntries();
+    $allEntries = array_filter($allEntries, function($entry) use ($filterDate) {
+        return $entry['date'] === $filterDate;
+    });
+} elseif (isset($_GET['year']) && isset($_GET['month'])) {
+    // Filter by month
+    $allEntries = getEntriesForMonth($filterYear, $filterMonth);
 } else {
     $allEntries = getAllEntries();
 }
 
 $memories = getMemories();
+
+// Get days with entries for calendar
+$daysWithEntries = getDaysWithEntries($filterYear, $filterMonth);
 
 // Pagination
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
@@ -623,7 +757,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                     <?php endif; ?>
                     
                     <div class="view-text">
-                        <?php echo nl2br(sanitizeInput($viewEntry['content_without_tags'])); ?>
+                        <?php echo linkifyText(nl2br(sanitizeInput($viewEntry['content_without_tags']))); ?>
                     </div>
                     
                     <div class="view-footer">
@@ -673,7 +807,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <?php endif; ?>
                             
                             <div class="memory-preview">
-                                <?php echo nl2br(sanitizeInput(getPreview($memory['content_without_tags'], 200))); ?>
+                                <?php echo linkifyText(nl2br(sanitizeInput(getPreview($memory['content_without_tags'], 200)))); ?>
                             </div>
                             <a href="?view=<?php echo urlencode($memory['filename']); ?>" class="memory-link">
                                 Read full entry →
@@ -708,6 +842,12 @@ $originalFilename = $editEntry['filename'] ?? '';
                 <input type="hidden" name="original_filename" value="<?php echo sanitizeInput($originalFilename); ?>">
                 <input type="hidden" name="existing_images" value="<?php echo htmlspecialchars(json_encode($formImages)); ?>">
                 <input type="hidden" name="deleted_images" id="deleted_images" value="[]">
+                
+                <!-- Auto-save status indicator -->
+                <div id="autosave-status" class="autosave-status" style="display: none;">
+                    <span class="autosave-icon">💾</span>
+                    <span class="autosave-text">Draft saved at <span id="autosave-time"></span></span>
+                </div>
                 
                 <div class="form-row">
                     <div class="form-group">
@@ -763,7 +903,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                 </div>
                 
                 <div class="form-group">
-                    <label for="images">Images (Max 5MB each, JPEG/PNG/GIF/WebP)</label>
+                    <label for="images">Images (Max 12MB each, JPEG/PNG/GIF/WebP)</label>
                     <input type="file" id="images" name="images[]" accept="image/*" multiple class="file-input">
                     <div id="image-preview" class="image-preview"></div>
                     
@@ -814,6 +954,106 @@ $originalFilename = $editEntry['filename'] ?? '';
                     <?php endif; ?>
                 </form>
             </div>
+
+            <!-- Date Navigation -->
+            <?php if (!$isSearching): ?>
+            <div class="date-navigation">
+                <button type="button" class="date-nav-toggle" onclick="toggleCalendar()">
+                    <span class="toggle-icon">📅</span>
+                    <span class="toggle-text">
+                        <?php 
+                        if (!empty($filterDate)) {
+                            echo date('F j, Y', strtotime($filterDate));
+                        } else {
+                            echo date('F Y', mktime(0, 0, 0, $filterMonth, 1, $filterYear));
+                        }
+                        ?>
+                    </span>
+                    <span class="toggle-arrow-cal">▼</span>
+                </button>
+                
+                <div class="calendar-content" id="calendarContent" style="display: none;">
+                    <div class="calendar-controls">
+                        <form method="GET" action="" class="month-selector">
+                            <button type="submit" name="month" value="<?php echo $filterMonth == 1 ? 12 : $filterMonth - 1; ?>" 
+                                    <?php if ($filterMonth == 1): ?>name="year" value="<?php echo $filterYear - 1; ?>"<?php else: ?>name="year" value="<?php echo $filterYear; ?>"<?php endif; ?>
+                                    class="btn-nav-month" title="Previous month">◀</button>
+                            
+                            <select name="month" onchange="this.form.submit()" class="month-select">
+                                <?php for ($m = 1; $m <= 12; $m++): ?>
+                                    <option value="<?php echo $m; ?>" <?php echo $m == $filterMonth ? 'selected' : ''; ?>>
+                                        <?php echo date('F', mktime(0, 0, 0, $m, 1)); ?>
+                                    </option>
+                                <?php endfor; ?>
+                            </select>
+                            
+                            <select name="year" onchange="this.form.submit()" class="year-select">
+                                <?php 
+                                $currentYear = date('Y');
+                                for ($y = $currentYear; $y >= $currentYear - 10; $y--): 
+                                ?>
+                                    <option value="<?php echo $y; ?>" <?php echo $y == $filterYear ? 'selected' : ''; ?>>
+                                        <?php echo $y; ?>
+                                    </option>
+                                <?php endfor; ?>
+                            </select>
+                            
+                            <button type="submit" name="month" value="<?php echo $filterMonth == 12 ? 1 : $filterMonth + 1; ?>" 
+                                    <?php if ($filterMonth == 12): ?>name="year" value="<?php echo $filterYear + 1; ?>"<?php else: ?>name="year" value="<?php echo $filterYear; ?>"<?php endif; ?>
+                                    class="btn-nav-month" title="Next month">▶</button>
+                            
+                            <a href="index.php" class="btn-today">Today</a>
+                        </form>
+                    </div>
+                    
+                    <div class="mini-calendar">
+                        <?php
+                        $firstDay = mktime(0, 0, 0, $filterMonth, 1, $filterYear);
+                        $daysInMonth = date('t', $firstDay);
+                        $dayOfWeek = date('w', $firstDay); // 0 (Sunday) to 6 (Saturday)
+                        
+                        // Week day headers
+                        $weekDays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+                        echo '<div class="calendar-grid">';
+                        foreach ($weekDays as $day) {
+                            echo '<div class="calendar-day-header">' . $day . '</div>';
+                        }
+                        
+                        // Empty cells before first day
+                        for ($i = 0; $i < $dayOfWeek; $i++) {
+                            echo '<div class="calendar-day-empty"></div>';
+                        }
+                        
+                        // Days of the month
+                        for ($day = 1; $day <= $daysInMonth; $day++) {
+                            $date = sprintf('%04d-%02d-%02d', $filterYear, $filterMonth, $day);
+                            $hasEntry = in_array($day, $daysWithEntries);
+                            $isToday = $date === date('Y-m-d');
+                            
+                            $classes = ['calendar-day'];
+                            if ($hasEntry) $classes[] = 'has-entry';
+                            if ($isToday) $classes[] = 'is-today';
+                            if ($date === $filterDate) $classes[] = 'is-selected';
+                            
+                            echo '<a href="?date=' . $date . '&year=' . $filterYear . '&month=' . $filterMonth . '" class="' . implode(' ', $classes) . '">';
+                            echo $day;
+                            echo '</a>';
+                        }
+                        
+                        echo '</div>';
+                        ?>
+                    </div>
+                    
+                    <?php if (!empty($filterDate)): ?>
+                        <div class="calendar-footer">
+                            <a href="?year=<?php echo $filterYear; ?>&month=<?php echo $filterMonth; ?>" class="btn-clear-date">
+                                Show all entries for <?php echo date('F Y', mktime(0, 0, 0, $filterMonth, 1, $filterYear)); ?>
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <?php if ($isSearching && $totalEntries > 0): ?>
                 <p class="search-results-info">
@@ -889,7 +1129,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <?php endif; ?>
                             
                             <div class="entry-preview">
-                                <?php echo nl2br(sanitizeInput(getPreview($entry['content_without_tags']))); ?>
+                                <?php echo linkifyText(nl2br(sanitizeInput(getPreview($entry['content_without_tags'])))); ?>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -925,10 +1165,216 @@ $originalFilename = $editEntry['filename'] ?? '';
     </div>
 
     <script>
+    // Auto-save functionality
+    let autoSaveTimer = null;
+    let hasUnsavedChanges = false;
+    const AUTOSAVE_KEY = 'diary_autosave_draft';
+    const AUTOSAVE_DELAY = 3000; // 3 seconds
+    
+    // Form fields to auto-save
+    const formFields = ['title', 'location', 'weather', 'mood', 'plans', 'content'];
+    
+    // Save draft to localStorage
+    function saveDraft() {
+        const draft = {
+            timestamp: Date.now(),
+            date: document.getElementById('date')?.value || '',
+            time: document.getElementById('time')?.value || '',
+            title: document.getElementById('title')?.value || '',
+            location: document.getElementById('location')?.value || '',
+            weather: document.getElementById('weather')?.value || '',
+            mood: document.getElementById('mood')?.value || '',
+            plans: document.getElementById('plans')?.value || '',
+            content: document.getElementById('content')?.value || ''
+        };
+        
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(draft));
+        
+        // Update status indicator
+        showAutoSaveStatus(draft.timestamp);
+        
+        console.log('Draft auto-saved');
+    }
+    
+    // Show auto-save status with timestamp
+    function showAutoSaveStatus(timestamp) {
+        const statusDiv = document.getElementById('autosave-status');
+        const timeSpan = document.getElementById('autosave-time');
+        
+        if (statusDiv && timeSpan) {
+            const now = new Date(timestamp);
+            const timeStr = now.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit'
+            });
+            
+            timeSpan.textContent = timeStr;
+            statusDiv.style.display = 'flex';
+            
+            // Fade out after 3 seconds
+            setTimeout(() => {
+                statusDiv.style.opacity = '1';
+                statusDiv.style.transition = 'opacity 0.5s';
+            }, 10);
+            
+            setTimeout(() => {
+                statusDiv.style.opacity = '0.7';
+            }, 3000);
+        }
+    }
+    
+    // Restore draft from localStorage
+    function restoreDraft() {
+        const saved = localStorage.getItem(AUTOSAVE_KEY);
+        if (!saved) return false;
+        
+        try {
+            const draft = JSON.parse(saved);
+            
+            // Check if draft is recent (within last 7 days)
+            const daysOld = (Date.now() - draft.timestamp) / (1000 * 60 * 60 * 24);
+            if (daysOld > 7) {
+                localStorage.removeItem(AUTOSAVE_KEY);
+                return false;
+            }
+            
+            // Check if any field has content
+            const hasContent = draft.title || draft.location || draft.weather || 
+                             draft.mood || draft.plans || draft.content;
+            
+            if (!hasContent) return false;
+            
+            // Show restore prompt
+            const timeAgo = formatTimeAgo(draft.timestamp);
+            const restore = confirm(
+                `Found an auto-saved draft from ${timeAgo}.\n\n` +
+                `Title: ${draft.title || '(none)'}\n` +
+                `Do you want to restore it?`
+            );
+            
+            if (restore) {
+                if (draft.date) document.getElementById('date').value = draft.date;
+                if (draft.time) document.getElementById('time').value = draft.time;
+                if (draft.title) document.getElementById('title').value = draft.title;
+                if (draft.location) document.getElementById('location').value = draft.location;
+                if (draft.weather) document.getElementById('weather').value = draft.weather;
+                if (draft.mood) document.getElementById('mood').value = draft.mood;
+                if (draft.plans) document.getElementById('plans').value = draft.plans;
+                if (draft.content) document.getElementById('content').value = draft.content;
+                
+                hasUnsavedChanges = true;
+                
+                // Show restored status
+                showAutoSaveStatus(draft.timestamp);
+                
+                return true;
+            } else {
+                // User declined, clear the draft
+                localStorage.removeItem(AUTOSAVE_KEY);
+            }
+        } catch (e) {
+            console.error('Error restoring draft:', e);
+            localStorage.removeItem(AUTOSAVE_KEY);
+        }
+        
+        return false;
+    }
+    
+    // Clear draft from localStorage
+    function clearDraft() {
+        localStorage.removeItem(AUTOSAVE_KEY);
+        hasUnsavedChanges = false;
+        
+        // Hide status indicator
+        const statusDiv = document.getElementById('autosave-status');
+        if (statusDiv) {
+            statusDiv.style.display = 'none';
+        }
+        
+        console.log('Draft cleared');
+    }
+    
+    // Format time ago
+    function formatTimeAgo(timestamp) {
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        
+        if (seconds < 60) return 'just now';
+        if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+        return `${Math.floor(seconds / 86400)} days ago`;
+    }
+    
+    // Schedule auto-save
+    function scheduleAutoSave() {
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        
+        autoSaveTimer = setTimeout(() => {
+            saveDraft();
+        }, AUTOSAVE_DELAY);
+    }
+    
+    // Setup auto-save listeners
+    function setupAutoSave() {
+        formFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('input', () => {
+                    hasUnsavedChanges = true;
+                    scheduleAutoSave();
+                });
+            }
+        });
+        
+        // Also listen to date/time changes
+        ['date', 'time'].forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('change', () => {
+                    hasUnsavedChanges = true;
+                    scheduleAutoSave();
+                });
+            }
+        });
+    }
+    
+    // Warn before leaving if unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+        if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.returnValue = ''; // Modern browsers ignore custom message
+            return '';
+        }
+    });
+    
+    // Clear draft on successful form submission
+    document.querySelector('.entry-form')?.addEventListener('submit', function(e) {
+        // Clear the unsaved flag immediately so beforeunload doesn't trigger
+        hasUnsavedChanges = false;
+        
+        // Clear the draft after a moment (let form submit first)
+        setTimeout(() => {
+            clearDraft();
+        }, 100);
+    });
+    
     // Toggle prompts section
     function togglePrompts() {
         const content = document.getElementById('promptsContent');
         const arrow = document.querySelector('.toggle-arrow');
+        
+        if (content.style.display === 'none' || content.style.display === '') {
+            content.style.display = 'block';
+            arrow.textContent = '▲';
+        } else {
+            content.style.display = 'none';
+            arrow.textContent = '▼';
+        }
+    }
+    
+    // Toggle calendar
+    function toggleCalendar() {
+        const content = document.getElementById('calendarContent');
+        const arrow = document.querySelector('.toggle-arrow-cal');
         
         if (content.style.display === 'none' || content.style.display === '') {
             content.style.display = 'block';
@@ -944,6 +1390,15 @@ $originalFilename = $editEntry['filename'] ?? '';
         const content = document.getElementById('promptsContent');
         content.style.display = 'block';
         document.querySelector('.toggle-arrow').textContent = '▲';
+        
+        // Setup auto-save
+        setupAutoSave();
+        
+        // Try to restore draft (only on new entry page, not when editing)
+        const isEditing = document.querySelector('input[name="original_filename"]')?.value;
+        if (!isEditing) {
+            restoreDraft();
+        }
     });
     
     document.getElementById('images')?.addEventListener('change', function(e) {
