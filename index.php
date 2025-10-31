@@ -210,6 +210,9 @@ function deleteImage($filename) {
         return false;
     }
     
+    // Security: prevent directory traversal
+    $filename = basename($filename);
+    
     $filepath = IMAGES_DIR . '/' . $filename;
     if (file_exists($filepath)) {
         return unlink($filepath);
@@ -231,12 +234,29 @@ function formatQuickTags($location, $weather, $mood, $plans) {
 }
 
 /**
+ * Format entry tags for storage (normalize and clean)
+ */
+function formatEntryTags($tagsInput) {
+    if (empty($tagsInput)) return '';
+    
+    // Split by comma, trim whitespace, remove # if present
+    $tags = array_map('trim', explode(',', $tagsInput));
+    $tags = array_filter($tags); // Remove empty
+    $tags = array_map(function($tag) {
+        return ltrim($tag, '#'); // Remove leading #
+    }, $tags);
+    
+    return !empty($tags) ? 'Tags: ' . implode(', ', $tags) . "\n\n" : '';
+}
+
+/**
  * Parse quick tags from content
  */
 function parseQuickTags($content) {
     $tags = ['location' => '', 'weather' => '', 'mood' => '', 'plans' => ''];
+    $entryTags = [];
     
-    // Check if content starts with tags (format: Location: X\nWeather: Y\nMood: Z\nPlans: W)
+    // Check if content starts with tags (format: Location: X\nWeather: Y\nMood: Z\nPlans: W\nTags: a, b, c)
     $lines = explode("\n", $content);
     $tagCount = 0;
     
@@ -252,6 +272,10 @@ function parseQuickTags($content) {
             $tagCount++;
         } elseif (preg_match('/^Plans:\s*(.+)$/', $line, $match)) {
             $tags['plans'] = trim($match[1]);
+            $tagCount++;
+        } elseif (preg_match('/^Tags:\s*(.+)$/', $line, $match)) {
+            $tagsStr = trim($match[1]);
+            $entryTags = array_map('trim', explode(',', $tagsStr));
             $tagCount++;
         } elseif (!empty(trim($line))) {
             // Hit non-tag content, stop
@@ -269,7 +293,7 @@ function parseQuickTags($content) {
         $content = implode("\n", $contentLines);
     }
     
-    return ['tags' => $tags, 'content' => $content];
+    return ['tags' => $tags, 'entry_tags' => $entryTags, 'content' => $content];
 }
 
 /**
@@ -298,6 +322,8 @@ function saveEntry($filename, $title, $content, $images = []) {
  * Read diary entry from file
  */
 function readEntry($filename) {
+    // Security: prevent directory traversal
+    $filename = basename($filename);
     $filepath = ENTRIES_DIR . '/' . $filename;
     
     if (!file_exists($filepath)) {
@@ -331,7 +357,8 @@ function readEntry($filename) {
         'location' => $parsed['tags']['location'],
         'weather' => $parsed['tags']['weather'],
         'mood' => $parsed['tags']['mood'],
-        'plans' => $parsed['tags']['plans']
+        'plans' => $parsed['tags']['plans'],
+        'entry_tags' => $parsed['entry_tags']
     ];
 }
 
@@ -339,6 +366,9 @@ function readEntry($filename) {
  * Delete diary entry and its images
  */
 function deleteEntry($filename) {
+    // Security: prevent directory traversal
+    $filename = basename($filename);
+    
     $entry = readEntry($filename);
     
     if ($entry && !empty($entry['images'])) {
@@ -416,6 +446,33 @@ function getAllEntries() {
 }
 
 /**
+ * Get all unique tags from all entries
+ */
+function getAllTags() {
+    $allEntries = getAllEntries();
+    $tagCounts = [];
+    
+    foreach ($allEntries as $entry) {
+        if (!empty($entry['entry_tags'])) {
+            foreach ($entry['entry_tags'] as $tag) {
+                $tag = strtolower(trim($tag));
+                if (!empty($tag)) {
+                    if (!isset($tagCounts[$tag])) {
+                        $tagCounts[$tag] = 0;
+                    }
+                    $tagCounts[$tag]++;
+                }
+            }
+        }
+    }
+    
+    // Sort by count (descending)
+    arsort($tagCounts);
+    
+    return $tagCounts;
+}
+
+/**
  * Search entries by keyword in title and content
  */
 function searchEntries($keyword) {
@@ -430,6 +487,27 @@ function searchEntries($keyword) {
         
         if ($titleMatch || $contentMatch) {
             $results[] = $entry;
+        }
+    }
+    
+    return $results;
+}
+
+/**
+ * Search entries by tag
+ */
+function searchEntriesByTag($tag) {
+    $allEntries = getAllEntries();
+    $results = [];
+    
+    $tag = strtolower(trim($tag));
+    
+    foreach ($allEntries as $entry) {
+        if (!empty($entry['entry_tags'])) {
+            $entryTags = array_map('strtolower', array_map('trim', $entry['entry_tags']));
+            if (in_array($tag, $entryTags)) {
+                $results[] = $entry;
+            }
         }
     }
     
@@ -509,9 +587,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $weather = $_POST['weather'] ?? '';
         $mood = $_POST['mood'] ?? '';
         $plans = $_POST['plans'] ?? '';
+        $entryTags = $_POST['entry_tags'] ?? '';
         $originalFilename = $_POST['original_filename'] ?? '';
         $existingImages = isset($_POST['existing_images']) ? json_decode($_POST['existing_images'], true) : [];
         $deletedImages = isset($_POST['deleted_images']) ? json_decode($_POST['deleted_images'], true) : [];
+        
+        // Security: validate arrays
+        if (!is_array($existingImages)) $existingImages = [];
+        if (!is_array($deletedImages)) $deletedImages = [];
+        
+        // Security: sanitize filenames in arrays
+        $existingImages = array_map('basename', $existingImages);
+        $deletedImages = array_map('basename', $deletedImages);
         
         $errors = [];
         
@@ -563,11 +650,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $allImages = array_merge($existingImages, $uploadedImages);
             
-            // Add quick tags to content
-            $tagsText = formatQuickTags($location, $weather, $mood, $plans);
-            $fullContent = $tagsText . $content;
+            // Add quick tags and entry tags to content
+            $quickTagsText = formatQuickTags($location, $weather, $mood, $plans);
+            $entryTagsText = formatEntryTags($entryTags);
+            $fullContent = $quickTagsText . $entryTagsText . $content;
             
             if ($originalFilename && $originalFilename !== $filename) {
+                // Security: prevent directory traversal
+                $originalFilename = basename($originalFilename);
                 $filepath = ENTRIES_DIR . '/' . $originalFilename;
                 if (file_exists($filepath)) {
                     unlink($filepath);
@@ -587,6 +677,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'delete') {
         $filename = $_POST['filename'] ?? '';
+        
+        // Security: prevent directory traversal
+        $filename = basename($filename);
         
         if ($filename && deleteEntry($filename)) {
             $message = 'Diary entry deleted successfully!';
@@ -639,6 +732,10 @@ if (isset($_SESSION['message'])) {
 $searchQuery = isset($_GET['search']) ? trim($_GET['search']) : '';
 $isSearching = !empty($searchQuery);
 
+// Handle tag filtering
+$filterTag = isset($_GET['tag']) ? trim($_GET['tag']) : '';
+$isFilteringByTag = !empty($filterTag);
+
 // Handle date filtering
 $filterYear = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
 $filterMonth = isset($_GET['month']) ? intval($_GET['month']) : date('n');
@@ -646,6 +743,8 @@ $filterDate = isset($_GET['date']) ? $_GET['date'] : '';
 
 if ($isSearching) {
     $allEntries = searchEntries($searchQuery);
+} elseif ($isFilteringByTag) {
+    $allEntries = searchEntriesByTag($filterTag);
 } elseif (!empty($filterDate) && isValidDate($filterDate)) {
     // Filter by specific date
     $allEntries = getAllEntries();
@@ -664,6 +763,9 @@ $memories = getMemories();
 // Get days with entries for calendar
 $daysWithEntries = getDaysWithEntries($filterYear, $filterMonth);
 
+// Get all tags for tag cloud
+$allTags = getAllTags();
+
 // Pagination
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $totalEntries = count($allEntries);
@@ -680,6 +782,8 @@ $formLocation = $editEntry['location'] ?? '';
 $formWeather = $editEntry['weather'] ?? '';
 $formMood = $editEntry['mood'] ?? '';
 $formPlans = $editEntry['plans'] ?? '';
+$formEntryTags = $editEntry['entry_tags'] ?? [];
+$formEntryTagsString = !empty($formEntryTags) ? implode(', ', $formEntryTags) : '';
 $formImages = $editEntry['images'] ?? [];
 $originalFilename = $editEntry['filename'] ?? '';
 ?>
@@ -728,6 +832,14 @@ $originalFilename = $editEntry['filename'] ?? '';
                     
                     <h3 class="view-title"><?php echo sanitizeInput($viewEntry['title']); ?></h3>
                     
+                    <?php if (!empty($viewEntry['entry_tags'])): ?>
+                        <div class="entry-tags-display">
+                            <?php foreach ($viewEntry['entry_tags'] as $tag): ?>
+                                <a href="?tag=<?php echo urlencode($tag); ?>" class="entry-tag">#<?php echo sanitizeInput($tag); ?></a>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                    
                     <?php if (!empty($viewEntry['location']) || !empty($viewEntry['weather']) || !empty($viewEntry['mood']) || !empty($viewEntry['plans'])): ?>
                         <div class="view-quick-tags">
                             <?php if (!empty($viewEntry['location'])): ?>
@@ -748,10 +860,11 @@ $originalFilename = $editEntry['filename'] ?? '';
                     <?php if (!empty($viewEntry['images'])): ?>
                         <div class="view-images">
                             <?php foreach ($viewEntry['images'] as $image): ?>
-                                <img src="diary_images/<?php echo sanitizeInput($image); ?>" 
+                                <?php $safeImage = basename(sanitizeInput($image)); ?>
+                                <img src="diary_images/<?php echo $safeImage; ?>" 
                                      alt="Entry image" 
                                      class="view-image"
-                                     onclick="openLightbox('diary_images/<?php echo sanitizeInput($image); ?>')">
+                                     onclick="openLightbox('diary_images/<?php echo $safeImage; ?>')">
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
@@ -798,10 +911,11 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <?php if (!empty($memory['images'])): ?>
                                 <div class="memory-images">
                                     <?php foreach (array_slice($memory['images'], 0, 2) as $image): ?>
-                                        <img src="diary_images/<?php echo sanitizeInput($image); ?>" 
+                                        <?php $safeImage = basename(sanitizeInput($image)); ?>
+                                        <img src="diary_images/<?php echo $safeImage; ?>" 
                                              alt="Memory image" 
                                              class="memory-image"
-                                             onclick="openLightbox('diary_images/<?php echo sanitizeInput($image); ?>')">
+                                             onclick="openLightbox('diary_images/<?php echo $safeImage; ?>')">
                                     <?php endforeach; ?>
                                 </div>
                             <?php endif; ?>
@@ -899,6 +1013,13 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <textarea id="plans" name="plans" rows="2" 
                                    placeholder="What are you doing or planning today?"><?php echo sanitizeInput($formPlans); ?></textarea>
                         </div>
+                        
+                        <div class="form-group quick-tag-input">
+                            <label for="entry_tags">🏷️ Tags</label>
+                            <input type="text" id="entry_tags" name="entry_tags" 
+                                   value="<?php echo sanitizeInput($formEntryTagsString); ?>" 
+                                   placeholder="work, ideas, travel (comma-separated)">
+                        </div>
                     </div>
                 </div>
                 
@@ -912,9 +1033,10 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <p><strong>Current images:</strong></p>
                             <div class="image-grid">
                                 <?php foreach ($formImages as $image): ?>
-                                    <div class="image-item" data-image="<?php echo sanitizeInput($image); ?>">
-                                        <img src="diary_images/<?php echo sanitizeInput($image); ?>" alt="Entry image">
-                                        <button type="button" class="remove-image" onclick="removeImage('<?php echo sanitizeInput($image); ?>')">✕</button>
+                                    <?php $safeImage = basename(sanitizeInput($image)); ?>
+                                    <div class="image-item" data-image="<?php echo $safeImage; ?>">
+                                        <img src="diary_images/<?php echo $safeImage; ?>" alt="Entry image">
+                                        <button type="button" class="remove-image" onclick="removeImage('<?php echo $safeImage; ?>')">✕</button>
                                     </div>
                                 <?php endforeach; ?>
                             </div>
@@ -941,7 +1063,15 @@ $originalFilename = $editEntry['filename'] ?? '';
 
         <section class="entries-section">
             <div class="section-header">
-                <h2><?php echo $isSearching ? 'Search Results' : 'Recent Entries'; ?></h2>
+                <h2><?php 
+                    if ($isSearching) {
+                        echo 'Search Results';
+                    } elseif ($isFilteringByTag) {
+                        echo 'Entries tagged: #' . sanitizeInput($filterTag);
+                    } else {
+                        echo 'Recent Entries';
+                    }
+                ?></h2>
                 
                 <form method="GET" action="" class="search-form">
                     <input type="text" name="search" 
@@ -954,6 +1084,33 @@ $originalFilename = $editEntry['filename'] ?? '';
                     <?php endif; ?>
                 </form>
             </div>
+
+            <!-- Tag Cloud -->
+            <?php if (!$isSearching && !$isFilteringByTag && !empty($allTags)): ?>
+            <div class="tag-cloud-widget">
+                <button type="button" class="tag-cloud-toggle" onclick="toggleTagCloud()">
+                    <span class="toggle-icon">🏷️</span>
+                    <span class="toggle-text">Filter by Tag</span>
+                    <span class="toggle-arrow-tags">▼</span>
+                </button>
+                <div class="tag-cloud-content" id="tagCloudContent" style="display: none;">
+                    <div class="tag-cloud">
+                        <?php foreach ($allTags as $tag => $count): ?>
+                            <a href="?tag=<?php echo urlencode($tag); ?>" class="tag-cloud-item" title="<?php echo $count; ?> <?php echo $count == 1 ? 'entry' : 'entries'; ?>">
+                                #<?php echo sanitizeInput($tag); ?> <span class="tag-count">(<?php echo $count; ?>)</span>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <?php if ($isFilteringByTag): ?>
+                <div class="filter-info">
+                    <p>Showing entries tagged with <strong>#<?php echo sanitizeInput($filterTag); ?></strong></p>
+                    <a href="index.php" class="btn btn-secondary btn-small">Clear filter</a>
+                </div>
+            <?php endif; ?>
 
             <!-- Date Navigation -->
             <?php if (!$isSearching): ?>
@@ -1100,6 +1257,14 @@ $originalFilename = $editEntry['filename'] ?? '';
                             
                             <h3 class="entry-title"><?php echo sanitizeInput($entry['title']); ?></h3>
                             
+                            <?php if (!empty($entry['entry_tags'])): ?>
+                                <div class="entry-tags-display">
+                                    <?php foreach ($entry['entry_tags'] as $tag): ?>
+                                        <a href="?tag=<?php echo urlencode($tag); ?>" class="entry-tag entry-tag-small">#<?php echo sanitizeInput($tag); ?></a>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                            
                             <?php if (!empty($entry['location']) || !empty($entry['weather']) || !empty($entry['mood']) || !empty($entry['plans'])): ?>
                                 <div class="entry-quick-tags">
                                     <?php if (!empty($entry['location'])): ?>
@@ -1120,10 +1285,11 @@ $originalFilename = $editEntry['filename'] ?? '';
                             <?php if (!empty($entry['images'])): ?>
                                 <div class="entry-images">
                                     <?php foreach ($entry['images'] as $image): ?>
-                                        <img src="diary_images/<?php echo sanitizeInput($image); ?>" 
+                                        <?php $safeImage = basename(sanitizeInput($image)); ?>
+                                        <img src="diary_images/<?php echo $safeImage; ?>" 
                                              alt="Entry image" 
                                              class="entry-image"
-                                             onclick="openLightbox('diary_images/<?php echo sanitizeInput($image); ?>')">
+                                             onclick="openLightbox('diary_images/<?php echo $safeImage; ?>')">
                                     <?php endforeach; ?>
                                 </div>
                             <?php endif; ?>
@@ -1172,7 +1338,7 @@ $originalFilename = $editEntry['filename'] ?? '';
     const AUTOSAVE_DELAY = 3000; // 3 seconds
     
     // Form fields to auto-save
-    const formFields = ['title', 'location', 'weather', 'mood', 'plans', 'content'];
+    const formFields = ['title', 'location', 'weather', 'mood', 'plans', 'entry_tags', 'content'];
     
     // Save draft to localStorage
     function saveDraft() {
@@ -1185,6 +1351,7 @@ $originalFilename = $editEntry['filename'] ?? '';
             weather: document.getElementById('weather')?.value || '',
             mood: document.getElementById('mood')?.value || '',
             plans: document.getElementById('plans')?.value || '',
+            entry_tags: document.getElementById('entry_tags')?.value || '',
             content: document.getElementById('content')?.value || ''
         };
         
@@ -1240,7 +1407,7 @@ $originalFilename = $editEntry['filename'] ?? '';
             
             // Check if any field has content
             const hasContent = draft.title || draft.location || draft.weather || 
-                             draft.mood || draft.plans || draft.content;
+                             draft.mood || draft.plans || draft.entry_tags || draft.content;
             
             if (!hasContent) return false;
             
@@ -1260,6 +1427,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                 if (draft.weather) document.getElementById('weather').value = draft.weather;
                 if (draft.mood) document.getElementById('mood').value = draft.mood;
                 if (draft.plans) document.getElementById('plans').value = draft.plans;
+                if (draft.entry_tags) document.getElementById('entry_tags').value = draft.entry_tags;
                 if (draft.content) document.getElementById('content').value = draft.content;
                 
                 hasUnsavedChanges = true;
@@ -1382,6 +1550,22 @@ $originalFilename = $editEntry['filename'] ?? '';
         } else {
             content.style.display = 'none';
             arrow.textContent = '▼';
+        }
+    }
+    
+    // Toggle tag cloud
+    function toggleTagCloud() {
+        const content = document.getElementById('tagCloudContent');
+        const arrow = document.querySelector('.toggle-arrow-tags');
+        
+        if (content && arrow) {
+            if (content.style.display === 'none' || content.style.display === '') {
+                content.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                content.style.display = 'none';
+                arrow.textContent = '▼';
+            }
         }
     }
     
