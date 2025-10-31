@@ -315,6 +315,127 @@ section h2 {
     color: #6c757d;
 }
 
+/* Entry Tags Display */
+.entry-tags-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 15px 0;
+}
+
+.entry-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    text-decoration: none;
+    border-radius: 15px;
+    font-size: 0.85em;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.entry-tag:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 3px 8px rgba(102, 126, 234, 0.4);
+}
+
+.entry-tag-small {
+    padding: 3px 10px;
+    font-size: 0.8em;
+}
+
+/* Tag Cloud Widget */
+.tag-cloud-widget {
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    border: 2px solid #dee2e6;
+}
+
+.tag-cloud-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 12px 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    color: #333;
+    transition: background 0.3s;
+}
+
+.tag-cloud-toggle:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.toggle-arrow-tags {
+    margin-left: auto;
+    font-size: 0.8em;
+}
+
+.tag-cloud-content {
+    padding: 15px;
+    border-top: 1px solid #dee2e6;
+}
+
+.tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.tag-cloud-item {
+    display: inline-block;
+    padding: 6px 14px;
+    background: white;
+    color: #667eea;
+    text-decoration: none;
+    border: 2px solid #667eea;
+    border-radius: 20px;
+    font-size: 0.9em;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.tag-cloud-item:hover {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 3px 8px rgba(102, 126, 234, 0.3);
+}
+
+.tag-count {
+    opacity: 0.7;
+    font-size: 0.9em;
+}
+
+.filter-info {
+    background: #e7f3ff;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.filter-info p {
+    margin: 0;
+    color: #333;
+}
+
+.btn-small {
+    padding: 8px 16px;
+    font-size: 0.9em;
+}
+
 /* Entry Form */
 .entry-form {
     background: #f8f9fa;
