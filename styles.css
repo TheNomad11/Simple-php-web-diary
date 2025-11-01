@@ -890,8 +890,13 @@ section h2 {
     border: none;
     font-size: 1.3em;
     cursor: pointer;
-    padding: 5px;
+    padding: 8px;
     transition: transform 0.2s;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-icon:hover {
