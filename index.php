@@ -149,7 +149,27 @@ function uploadImage($file) {
         return ['success' => false, 'error' => 'Failed to process image'];
     }
     
-    // Get original dimensions
+    // Fix EXIF orientation (for photos from phones/cameras)
+    if ($mimeType === 'image/jpeg' && function_exists('exif_read_data')) {
+        $exif = @exif_read_data($file['tmp_name']);
+        if ($exif && isset($exif['Orientation'])) {
+            $orientation = $exif['Orientation'];
+            
+            switch ($orientation) {
+                case 3:
+                    $source = imagerotate($source, 180, 0);
+                    break;
+                case 6:
+                    $source = imagerotate($source, -90, 0);
+                    break;
+                case 8:
+                    $source = imagerotate($source, 90, 0);
+                    break;
+            }
+        }
+    }
+    
+    // Get original dimensions (after rotation)
     $origWidth = imagesx($source);
     $origHeight = imagesy($source);
     
