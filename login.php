@@ -1,6 +1,7 @@
 <?php
 /**
  * Login page for Diary Application
+ * Now with CSRF protection
  */
 
 session_name('diary_app_session');
@@ -14,23 +15,32 @@ if (isLoggedIn()) {
     exit;
 }
 
+// Generate CSRF token
+generateCsrfToken();
+
 $error = '';
 
 // Handle login form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
-    
-    if (empty($username) || empty($password)) {
-        $error = 'Please enter both username and password.';
+    // Verify CSRF token
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!verifyCsrfToken($csrfToken)) {
+        $error = 'Invalid security token. Please try again.';
     } else {
-        if (login($username, $password)) {
-            header('Location: index.php');
-            exit;
+        $username = $_POST['username'] ?? '';
+        $password = $_POST['password'] ?? '';
+        
+        if (empty($username) || empty($password)) {
+            $error = 'Please enter both username and password.';
         } else {
-            $error = 'Invalid username or password.';
-            // Add delay to prevent brute force attacks
-            sleep(2);
+            if (login($username, $password)) {
+                header('Location: index.php');
+                exit;
+            } else {
+                $error = 'Invalid username or password.';
+                // Add delay to prevent brute force attacks
+                sleep(2);
+            }
         }
     }
 }
@@ -58,6 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" action="" class="login-form">
+                <?php echo csrfTokenField(); ?>
+                
                 <div class="form-group">
                     <label for="username">Username</label>
                     <input type="text" id="username" name="username" 
@@ -73,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-block">
-                    🔐 Login
+                    🔒 Login
                 </button>
             </form>
 
