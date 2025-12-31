@@ -1,16 +1,53 @@
 <?php
 /**
  * Configuration file for Diary Application
- * Contains authentication credentials
+ * Contains authentication credentials and security functions
  */
 
+// Session Security Settings - MUST be set before session_start()
+ini_set('session.cookie_httponly', 1);
+ini_set('session.cookie_secure', 1); // For HTTPS
+ini_set('session.cookie_samesite', 'Strict');
+
+// Error handling for production
+ini_set('display_errors', 0);
+error_reporting(0);
+
 // Security: Change these credentials!
-define('AUTH_USERNAME', 'admin');
-define('AUTH_PASSWORD', password_hash('changeme123', PASSWORD_DEFAULT));
+define('AUTH_USERNAME', 'yourusername');
+define('AUTH_PASSWORD', password_hash('yourpassword', PASSWORD_DEFAULT));
 
 // Session configuration
 define('SESSION_NAME', 'diary_app_session');
 define('SESSION_TIMEOUT', 3600); // 1 hour in seconds
+
+/**
+ * Generate CSRF token
+ */
+function generateCsrfToken() {
+    if (!isset($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/**
+ * Verify CSRF token
+ */
+function verifyCsrfToken($token) {
+    if (!isset($_SESSION['csrf_token']) || !isset($token)) {
+        return false;
+    }
+    return hash_equals($_SESSION['csrf_token'], $token);
+}
+
+/**
+ * Output CSRF token input field
+ */
+function csrfTokenField() {
+    $token = generateCsrfToken();
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
+}
 
 /**
  * Verify user credentials
@@ -47,6 +84,9 @@ function login($username, $password) {
         $_SESSION['logged_in'] = true;
         $_SESSION['username'] = $username;
         $_SESSION['last_activity'] = time();
+        // Generate new CSRF token on login
+        unset($_SESSION['csrf_token']);
+        generateCsrfToken();
         return true;
     }
     return false;
