@@ -4,6 +4,7 @@
  * Main file: index.php
  * Handles all CRUD operations for diary entries with image support
  * Enhanced with writing prompts and quick tags
+ * Now with CSRF protection
  */
 
 // Start session and require authentication
@@ -12,6 +13,9 @@ session_start();
 
 require_once 'config.php';
 requireAuth(); // Redirect to login if not authenticated
+
+// Generate CSRF token for this session
+generateCsrfToken();
 
 // Set timezone to Berlin
 date_default_timezone_set('Europe/Berlin');
@@ -596,6 +600,12 @@ function linkifyText($text) {
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Verify CSRF token
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!verifyCsrfToken($csrfToken)) {
+        die('CSRF token validation failed. Please refresh the page and try again.');
+    }
+    
     $action = $_POST['action'] ?? '';
     
     if ($action === 'save') {
@@ -896,6 +906,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                     <div class="view-footer">
                         <form method="POST" action="" 
                               onsubmit="return confirm('Are you sure you want to delete this entry?');">
+                            <?php echo csrfTokenField(); ?>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="filename" value="<?php echo sanitizeInput($viewEntry['filename']); ?>">
                             <button type="submit" class="btn btn-danger">🗑️ Delete Entry</button>
@@ -972,6 +983,7 @@ $originalFilename = $editEntry['filename'] ?? '';
             </div>
             
             <form method="POST" action="" class="entry-form" enctype="multipart/form-data">
+                <?php echo csrfTokenField(); ?>
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="original_filename" value="<?php echo sanitizeInput($originalFilename); ?>">
                 <input type="hidden" name="existing_images" value="<?php echo htmlspecialchars(json_encode($formImages)); ?>">
@@ -1267,6 +1279,7 @@ $originalFilename = $editEntry['filename'] ?? '';
                                        class="btn-icon" title="Edit">✏️</a>
                                     <form method="POST" action="" class="delete-form" 
                                           onsubmit="return confirm('Are you sure you want to delete this entry?');">
+                                        <?php echo csrfTokenField(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="filename" 
                                                value="<?php echo sanitizeInput($entry['filename']); ?>">
@@ -1539,10 +1552,8 @@ $originalFilename = $editEntry['filename'] ?? '';
         // Clear the unsaved flag immediately so beforeunload doesn't trigger
         hasUnsavedChanges = false;
         
-        // Clear the draft after a moment (let form submit first)
-        setTimeout(() => {
-            clearDraft();
-        }, 100);
+        // Clear the draft immediately (no timeout)
+        clearDraft();
     });
     
     // Toggle prompts section
@@ -1592,8 +1603,11 @@ $originalFilename = $editEntry['filename'] ?? '';
     // Show prompts by default on page load
     document.addEventListener('DOMContentLoaded', function() {
         const content = document.getElementById('promptsContent');
-        content.style.display = 'block';
-        document.querySelector('.toggle-arrow').textContent = '▲';
+        if (content) {
+            content.style.display = 'block';
+            const arrow = document.querySelector('.toggle-arrow');
+            if (arrow) arrow.textContent = '▲';
+        }
         
         // Setup auto-save
         setupAutoSave();
